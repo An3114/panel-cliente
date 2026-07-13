@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mi Suscripción — Terminal Streaming</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<!-- Librería para el lector de imágenes -->
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
+<style>
+  :root {
+    --bg: #0f1115;
+    --card: #1a1d24;
+    --border: #2a2f3a;
+    --text-main: #f1f3f5;
+    --text-muted: #8b949e;
+    --primary: #3ea0e0;
+    --success: #3ee08a;
+    --warning: #e2ac3f;
+    --danger: #e2543f;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  
+  body {
+    background-color: var(--bg);
+    background-image: radial-gradient(circle at 50% 0%, rgba(62, 160, 224, 0.05) 0%, transparent 50%);
+    color: var(--text-main);
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 40px 20px;
+  }
+
+  .container {
+    width: 100%;
+    max-width: 480px;
+    margin-top: 20px;
+  }
+
+  /* Header */
+  .header {
+    text-align: center;
+    margin-bottom: 40px;
+  }
+  .brand {
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 700;
+    font-size: 1.5rem;
+    letter-spacing: 0.05em;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+  }
+  .brand-led {
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: var(--primary);
+    box-shadow: 0 0 12px var(--primary);
+  }
+  .subtitle {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    margin-top: 8px;
+  }
+
+  /* Search Box */
+  .search-box {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+    margin-bottom: 24px;
+  }
+  .search-box label {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 12px;
+  }
+  .input-wrapper {
+    display: flex;
+    gap: 10px;
+  }
+  input[type="text"] {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: #fff;
+    padding: 14px 16px;
+    border-radius: 10px;
+    font-family: inherit;
+    font-size: 1rem;
+    outline: none;
+    transition: 0.2s;
+  }
+  input[type="text"]:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(62,160,224,0.15); }
+  input[type="text"]::placeholder { color: #4a5363; }
+  
+  button {
+    background: var(--primary);
+    color: #0b1a26;
+    border: none;
+    padding: 0 20px;
+    border-radius: 10px;
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 700;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: 0.2s;
+  }
+  button:hover { filter: brightness(1.1); transform: translateY(-1px); }
+  button:active { transform: translateY(1px); }
+
+  /* Drag & Drop Lector de imagen */
+  .file-drop-area {
+    border: 2px dashed var(--border);
+    background: rgba(255,255,255,0.02);
+    border-radius: 12px;
+    padding: 16px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: 0.2s;
+    margin-top: 16px;
+  }
+  .file-drop-area:hover, .file-drop-area.dragover {
+    border-color: var(--primary);
+    background: rgba(62,160,224,0.05);
+    color: var(--primary);
+  }
+  .ocr-loading {
+    display: none;
+    color: var(--warning);
+    font-size: 0.85rem;
+    margin-top: 12px;
+    text-align: center;
+    font-weight: 600;
+    animation: pulse 1.5s infinite;
+  }
+  @keyframes pulse { 0% { opacity: 0.6; } 50% { opacity: 1; } 100% { opacity: 0.6; } }
+
+  /* Error Message */
+  .error-msg {
+    display: none;
+    background: rgba(226, 84, 63, 0.1);
+    color: var(--danger);
+    border: 1px dashed var(--danger);
+    padding: 12px;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    text-align: center;
+    margin-top: 16px;
+  }
+
+  /* Result Card */
+  .result-card {
+    display: none;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 30px 24px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+    animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+
+  .status-badge {
+    display: inline-block;
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 20px;
+  }
+  .status-active { background: rgba(62,224,138,0.1); color: var(--success); border: 1px solid rgba(62,224,138,0.2); }
+  .status-pending { background: rgba(226,172,63,0.1); color: var(--warning); border: 1px solid rgba(226,172,63,0.2); }
+  .status-expired { background: rgba(226,84,63,0.1); color: var(--danger); border: 1px solid rgba(226,84,63,0.2); }
+
+  .days-container { text-align: center; margin-bottom: 24px; }
+  .days-number {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 4.5rem;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--text-main);
+  }
+  .days-label { color: var(--text-muted); font-size: 0.9rem; margin-top: 4px; }
+  
+  .days-number.danger { color: var(--danger); }
+
+  .progress-bg {
+    background: rgba(255,255,255,0.05);
+    height: 8px;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 24px;
+  }
+  .progress-bar {
+    height: 100%;
+    background: var(--success);
+    border-radius: 4px;
+    transition: width 1s ease-out;
+  }
+  .progress-bar.warning { background: var(--warning); }
+  .progress-bar.danger { background: var(--danger); }
+
+  .info-group {
+    background: rgba(255,255,255,0.02);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+  .info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    font-size: 0.85rem;
+  }
+  .info-row:last-child { border-bottom: none; }
+  .info-label { color: var(--text-muted); }
+  .info-value { font-weight: 600; color: var(--text-main); text-align: right; }
+
+  .services-list {
+    margin-top: 8px;
+  }
+  .service-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255,255,255,0.05);
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    margin-bottom: 8px;
+  }
+  .service-item::before { content: '📺'; }
+
+  /* Support Button */
+  .support-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    width: 100%;
+    background: transparent;
+    color: var(--text-main);
+    border: 1px solid var(--border);
+    padding: 16px;
+    border-radius: 12px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    text-decoration: none;
+    margin-top: 24px;
+    transition: 0.2s;
+  }
+  .support-btn:hover {
+    background: rgba(255,255,255,0.05);
+    border-color: var(--text-muted);
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <div class="header">
+    <div class="brand"><span class="brand-led"></span> TERMINAL STREAMING</div>
+    <div class="subtitle">Portal de clientes · Consulta tu servicio</div>
+  </div>
+
+  <div class="search-box">
+    <label for="codigo">Ingresa tu código de referencia</label>
+    <div class="input-wrapper">
+      <input type="text" id="codigo" placeholder="Ej: REF-ABCD123" onkeypress="if(event.key==='Enter') consultar()">
+      <button onclick="consultar()">Buscar</button>
+    </div>
+    
+    <!-- Lector de imagen -->
+    <div class="file-drop-area" id="ref-drop-area">
+      📷 Sube una foto de tu recibo <br><span style="font-size: 0.75rem;">(Toca aquí, arrastra o pega la imagen)</span>
+      <input type="file" id="ref-file-input" accept="image/*" style="display:none;">
+    </div>
+    <div class="ocr-loading" id="ocr-loading">⏳ Escaneando recibo, por favor espera...</div>
+    
+    <div class="error-msg" id="error-msg">❌ Código no válido o no encontrado. Revisa tu recibo e intenta de nuevo.</div>
+  </div>
+
+  <div class="result-card" id="result-card">
+    <div id="status-badge" class="status-badge status-active">✅ Activo</div>
+    
+    <div class="days-container">
+      <div class="days-number" id="days-number">0</div>
+      <div class="days-label" id="days-label">días restantes</div>
+    </div>
+
+    <div class="progress-bg">
+      <div class="progress-bar" id="progress-bar" style="width: 0%;"></div>
+    </div>
+
+    <div class="info-group">
+      <div class="info-row">
+        <span class="info-label">Fecha de inicio</span>
+        <span class="info-value" id="val-inicio">—</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Fecha de vencimiento</span>
+        <span class="info-value" id="val-fin">—</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Estado del pago</span>
+        <span class="info-value" id="val-pago">—</span>
+      </div>
+    </div>
+
+    <div class="info-label" style="margin-bottom: 8px; font-size: 0.85rem;">Servicios incluidos:</div>
+    <div class="services-list" id="services-list">
+      <!-- Los servicios aparecen aquí -->
+    </div>
+
+    <!-- Enlace de WhatsApp inicial con el número configurado -->
+    <a href="https://wa.me/573022346315?text=Hola,%20necesito%20soporte%20con%20mi%20cuenta." target="_blank" class="support-btn" id="support-btn">
+      💬 Contactar a Soporte
+    </a>
+  </div>
+</div>
+
+<script>
+  /* ================= LÓGICA DEL DECODIFICADOR ================= */
+  const ALPHABET = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const REF_KEY_V2 = [5, 12, 3, 7]; 
+  const REF_KEY_V1 = [7, 13, 3, 19, 11]; 
+  
+  const I_CODES_V2 = {"Disney (1 Pantalla) 30 Días":"A", "Prime Video (1 Pantalla) 30 Días":"B", "ViX (1 Pantalla) 30 Días":"C", "Crunchyroll (1 Pantalla) 30 Días":"D", "HBO Max (1 Pantalla) 30 Días":"E", "Spotify (1 Cuenta) 30 Días":"F", "YouTube Premium (1 Cuenta) 30 Días":"G", "Netflix (1 Pantalla) 30 Días":"H", "Disney+ ESPN (1 Pantalla) 30 Días":"I", "Paramount+ (1 Pantalla) 30 Días":"J"};
+  const I_CODES_V1 = {"Disney (1 Pantalla) 30 Días":"DN", "Prime Video (1 Pantalla) 30 Días":"PV", "ViX (1 Pantalla) 30 Días":"VX", "Crunchyroll (1 Pantalla) 30 Días":"CR", "HBO Max (1 Pantalla) 30 Días":"HM", "Spotify (1 Cuenta) 30 Días":"SP", "YouTube Premium (1 Cuenta) 30 Días":"YT", "Netflix (1 Pantalla) 30 Días":"NF", "Disney+ ESPN (1 Pantalla) 30 Días":"DE", "Paramount+ (1 Pantalla) 30 Días":"PM"};
+  
+  function getIName(c, isLegacy) { 
+    let dict = isLegacy ? I_CODES_V1 : I_CODES_V2;
+    return Object.keys(dict).find(k => dict[k] === c) || 'Servicio Externo (' + c + ')'; 
+  }
+
+  function shiftStr(s, decode=false) {
+    let r=''; for(let i=0; i<s.length; i++) {
+      let x=ALPHABET.indexOf(s[i].toUpperCase());
+      if(x===-1) r+=s[i]; else r+=ALPHABET[(x + (decode? -REF_KEY_V2[i%4]+36 : REF_KEY_V2[i%4])) % 36];
+    } return r;
+  }
+
+  function calcularDias(start, end) {
+    const hoy = new Date();
+    hoy.setHours(0,0,0,0);
+    const difTiempo = end.getTime() - hoy.getTime();
+    const diasRestantes = Math.ceil(difTiempo / (1000 * 3600 * 24));
+    
+    const difTotal = end.getTime() - start.getTime();
+    const diasTotales = Math.ceil(difTotal / (1000 * 3600 * 24)) || 30;
+    
+    let porcentaje = (diasRestantes / diasTotales) * 100;
+    if (porcentaje < 0) porcentaje = 0;
+    if (porcentaje > 100) porcentaje = 100;
+
+    return { restantes: diasRestantes, porcentaje };
+  }
+
+  function consultar() {
+    let input = document.getElementById('codigo').value.toUpperCase().replace(/^REF-/, '').trim();
+    const errorMsg = document.getElementById('error-msg');
+    const resultCard = document.getElementById('result-card');
+    
+    if(!input) {
+      errorMsg.textContent = '❌ Por favor ingresa un código.';
+      errorMsg.style.display = 'block';
+      resultCard.style.display = 'none';
+      return;
+    }
+
+    try {
+      let items = [], st, end, pStat = "1";
+
+      if (input.includes('-')) {
+        // --- DECODIFICADOR V2 (Cortos) ---
+        let raw = shiftStr(input, true); 
+        let p = raw.split('-'); 
+        if(p.length < 5) throw new Error();
+        st = new Date(new Date(2024,0,1).getTime() + parseInt(p[1],36)*86400000);
+        end = new Date(st); end.setDate(end.getDate() + parseInt(p[2],36));
+        pStat = p[3];
+        for(const m of p[4].matchAll(/(\d*)([A-Z])/g)) items.push({name: getIName(m[2], false), qty: m[1]?parseInt(m[1]):1});
+      } else {
+        // --- DECODIFICADOR V1 (Largos Antiguos) ---
+        const clean = input.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if(clean.length % 2 !== 0) throw new Error();
+        let payload = '';
+        for (let i = 0; i < clean.length; i += 2) {
+          const code = parseInt(clean.substr(i, 2), 36) ^ REF_KEY_V1[(i / 2) % REF_KEY_V1.length];
+          payload += String.fromCharCode(code);
+        }
+        const parts = payload.split('~'); 
+        let startB36 = parts.length >= 4 ? parts[1] : parts[0];
+        let endB36 = parts.length >= 4 ? parts[2] : parts[1];
+        let itemsStr = parts.length >= 4 ? parts[3] : parts[2];
+        
+        st = new Date(new Date(2024,0,1).getTime() + parseInt(startB36, 36) * 86400000);
+        end = new Date(new Date(2024,0,1).getTime() + parseInt(endB36, 36) * 86400000); 
+        
+        if (itemsStr) {
+          for(let tok of itemsStr.split('-')) {
+            if(!tok) continue;
+            let c = tok.slice(0, 2).toUpperCase(), q = tok.slice(2) || '1';
+            items.push({name: getIName(c, true), qty: parseInt(q)});
+          }
+        }
+      }
+
+      // Cálculo de días
+      const timeData = calcularDias(st, end);
+      
+      // Actualizar UI
+      errorMsg.style.display = 'none';
+      resultCard.style.display = 'block';
+
+      // Fechas
+      const opts = { day: '2-digit', month: 'short', year: 'numeric' };
+      document.getElementById('val-inicio').textContent = st.toLocaleDateString('es-CO', opts);
+      document.getElementById('val-fin').textContent = end.toLocaleDateString('es-CO', opts);
+
+      // Estado del Pago
+      const valPago = document.getElementById('val-pago');
+      if (pStat === "1") {
+        valPago.textContent = "✅ Confirmado";
+        valPago.style.color = "var(--success)";
+      } else {
+        valPago.textContent = "⏳ En validación";
+        valPago.style.color = "var(--warning)";
+      }
+
+      // Días y Barra de Progreso
+      const daysNum = document.getElementById('days-number');
+      const daysLabel = document.getElementById('days-label');
+      const progBar = document.getElementById('progress-bar');
+      const badge = document.getElementById('status-badge');
+
+      setTimeout(() => { progBar.style.width = timeData.porcentaje + '%'; }, 100);
+
+      progBar.className = 'progress-bar';
+      daysNum.className = 'days-number';
+
+      if (timeData.restantes < 0) {
+        // Vencido
+        daysNum.textContent = Math.abs(timeData.restantes);
+        daysLabel.textContent = "días vencido";
+        daysNum.classList.add('danger');
+        progBar.classList.add('danger');
+        badge.className = 'status-badge status-expired';
+        badge.textContent = '⚠ Servicio Vencido';
+      } else if (timeData.restantes === 0) {
+        // Vence hoy
+        daysNum.textContent = "HOY";
+        daysLabel.textContent = "se vence tu servicio";
+        daysNum.classList.add('danger');
+        progBar.classList.add('danger');
+        badge.className = 'status-badge status-expired';
+        badge.textContent = '⚠ Vence Hoy';
+      } else {
+        // Vigente
+        daysNum.textContent = timeData.restantes;
+        daysLabel.textContent = timeData.restantes === 1 ? "día restante" : "días restantes";
+        
+        if (timeData.restantes <= 3) {
+          progBar.classList.add('danger');
+          daysNum.classList.add('danger');
+        } else if (timeData.restantes <= 7) {
+          progBar.classList.add('warning');
+        }
+
+        if (pStat === "0") {
+          badge.className = 'status-badge status-pending';
+          badge.textContent = '⏳ Pago Pendiente';
+        } else {
+          badge.className = 'status-badge status-active';
+          badge.textContent = '✅ Activo';
+        }
+      }
+
+      // Renderizar Servicios
+      const listEl = document.getElementById('services-list');
+      listEl.innerHTML = '';
+      if (items.length === 0) {
+        listEl.innerHTML = '<div class="service-item">Suscripción genérica</div>';
+      } else {
+        items.forEach(i => {
+          listEl.innerHTML += `<div class="service-item">${i.name} ${i.qty > 1 ? '(x'+i.qty+')' : ''}</div>`;
+        });
+      }
+
+      // Actualización dinámica del enlace de WhatsApp
+      const waBtn = document.getElementById('support-btn');
+      let waText = timeData.restantes <= 0 
+        ? `Hola, mi servicio se venció (CÓDIGO: REF-${input}). Quiero renovar.`
+        : `Hola, necesito soporte con mi cuenta (CÓDIGO: REF-${input}).`;
+      
+      waBtn.href = `https://wa.me/573022346315?text=${encodeURIComponent(waText)}`;
+
+    } catch (e) {
+      errorMsg.textContent = '❌ Código no válido o corrupto. Verifica tu recibo.';
+      errorMsg.style.display = 'block';
+      resultCard.style.display = 'none';
+    }
+  }
+
+  /* ================= ESCÁNER DE IMAGEN (OCR) ================= */
+  const dropArea = document.getElementById('ref-drop-area');
+  const fileInput = document.getElementById('ref-file-input');
+  const ocrLoading = document.getElementById('ocr-loading');
+  const errorMsg = document.getElementById('error-msg');
+
+  // Eventos de Drag & Drop y Click
+  dropArea.onclick = () => fileInput.click();
+  dropArea.ondragover = e => { e.preventDefault(); dropArea.classList.add('dragover'); };
+  dropArea.ondragleave = () => dropArea.classList.remove('dragover');
+  dropArea.ondrop = e => { 
+    e.preventDefault(); 
+    dropArea.classList.remove('dragover'); 
+    if(e.dataTransfer.files[0]) procesarImagen(e.dataTransfer.files[0]); 
+  };
+  
+  // Archivo seleccionado
+  fileInput.onchange = e => { 
+    if(e.target.files[0]) procesarImagen(e.target.files[0]); 
+  };
+
+  // Pegar imagen (Ctrl+V)
+  document.addEventListener('paste', e => {
+    const items = (e.clipboardData || window.clipboardData).items;
+    for (let item of items) {
+      if (item.type.indexOf('image') === 0) procesarImagen(item.getAsFile());
+    }
+  });
+
+  async function procesarImagen(file) {
+    if(!file) return;
+    
+    // Ocultar resultados y mostrar carga
+    document.getElementById('result-card').style.display = 'none';
+    errorMsg.style.display = 'none';
+    ocrLoading.style.display = 'block';
+
+    try {
+      const worker = await Tesseract.createWorker('eng');
+      const ret = await worker.recognize(file);
+      await worker.terminate();
+
+      // Busca la palabra REF- seguida de letras, números o guiones
+      const match = ret.data.text.match(/REF-([A-Z0-9\-]+)/i);
+      
+      if (match) {
+        document.getElementById('codigo').value = 'REF-' + match[1].toUpperCase();
+        ocrLoading.style.display = 'none';
+        consultar(); // Autoejecutar búsqueda
+      } else {
+        ocrLoading.style.display = 'none';
+        errorMsg.textContent = '❌ No se detectó ningún código en la imagen. Intenta escribirlo manualmente.';
+        errorMsg.style.display = 'block';
+      }
+    } catch (err) {
+      ocrLoading.style.display = 'none';
+      errorMsg.textContent = '❌ Hubo un error al leer la imagen. Intenta escribir el código.';
+      errorMsg.style.display = 'block';
+    }
+  }
+</script>
+
+</body>
+</html>
