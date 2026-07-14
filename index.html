@@ -423,7 +423,7 @@
     const resultCard = document.getElementById('result-card');
     
     if(!input) {
-      errorMsg.textContent = '❌ Por favor ingresa un código.';
+      errorMsg.innerHTML = '❌ Por favor ingresa un código.';
       errorMsg.style.display = 'block';
       resultCard.style.display = 'none';
       return;
@@ -436,15 +436,24 @@
         // --- DECODIFICADOR V2 (Cortos) ---
         let raw = shiftStr(input, true); 
         let p = raw.split('-'); 
-        if(p.length < 5) throw new Error();
+        
+        // VALIDACIÓN ESTRICTA: Evita códigos dañados por el escáner OCR
+        if(p.length < 5) throw new Error("Estructura rota");
+        if(p[0].length !== 2) throw new Error("Salt corrupto por OCR");
+        if(p[3] !== "0" && p[3] !== "1") throw new Error("Estado corrupto por OCR");
+
         st = new Date(new Date(2024,0,1).getTime() + parseInt(p[1],36)*86400000);
-        end = new Date(st); end.setDate(end.getDate() + parseInt(p[2],36));
+        let diasInt = parseInt(p[2],36);
+        if(isNaN(diasInt) || diasInt <= 0 || diasInt > 500) throw new Error("Días inválidos");
+        
+        end = new Date(st); end.setDate(end.getDate() + diasInt);
         pStat = p[3];
         for(const m of p[4].matchAll(/(\d*)([A-Z])/g)) items.push({name: getIName(m[2], false), qty: m[1]?parseInt(m[1]):1});
+      
       } else {
         // --- DECODIFICADOR V1 (Largos Antiguos) ---
         const clean = input.toLowerCase().replace(/[^a-z0-9]/g, '');
-        if(clean.length % 2 !== 0) throw new Error();
+        if(clean.length % 2 !== 0) throw new Error("Longitud impar");
         let payload = '';
         for (let i = 0; i < clean.length; i += 2) {
           const code = parseInt(clean.substr(i, 2), 36) ^ REF_KEY_V1[(i / 2) % REF_KEY_V1.length];
@@ -557,7 +566,8 @@
       waBtn.href = `https://wa.me/573022346315?text=${encodeURIComponent(waText)}`;
 
     } catch (e) {
-      errorMsg.textContent = '❌ Código no válido o corrupto. Verifica tu recibo.';
+      // NUEVO MENSAJE DE ERROR INTELIGENTE
+      errorMsg.innerHTML = '❌ Código no válido. Si usaste la foto, <b>corrige las letras manualmente</b> arriba (Ej: una "B" puede confundirse con "12").';
       errorMsg.style.display = 'block';
       resultCard.style.display = 'none';
     }
@@ -579,12 +589,10 @@
     if(e.dataTransfer.files[0]) procesarImagen(e.dataTransfer.files[0]); 
   };
   
-  // Archivo seleccionado
   fileInput.onchange = e => { 
     if(e.target.files[0]) procesarImagen(e.target.files[0]); 
   };
 
-  // Pegar imagen (Ctrl+V)
   document.addEventListener('paste', e => {
     const items = (e.clipboardData || window.clipboardData).items;
     for (let item of items) {
@@ -595,7 +603,6 @@
   async function procesarImagen(file) {
     if(!file) return;
     
-    // UI Feedback: Ocultar resultados y mostrar carga interactiva
     document.getElementById('result-card').style.display = 'none';
     errorMsg.style.display = 'none';
     ocrLoading.textContent = '⏳ Escaneando recibo, por favor espera...';
@@ -605,33 +612,31 @@
 
     try {
       const worker = await Tesseract.createWorker('eng');
+      
+      // INSTRUCCIÓN EXTRA A LA IA PARA QUE NO SE CONFUNDA TANTO:
+      await worker.setParameters({
+        tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-'
+      });
+
       const ret = await worker.recognize(file);
       await worker.terminate();
 
-      // NUEVA LÓGICA: Separar el texto línea por línea para evitar que "Horario" se pegue al código
       const lineas = ret.data.text.split('\n');
       let codigoEncontrado = null;
       let esAntiguo = false;
 
       for (let linea of lineas) {
-        // Limpiador: quitamos espacios solo de esta línea y la pasamos a mayúsculas
         let lineaLimpia = linea.replace(/\s+/g, '').toUpperCase();
         
-        // 1. Busca patrón de Códigos Nuevos (con REF-)
         if (lineaLimpia.includes('REF-')) {
           const matchNuevo = lineaLimpia.match(/REF-([A-Z0-9\-]+)/);
           if (matchNuevo) {
-            // Extraemos la coincidencia
             codigoEncontrado = 'REF-' + matchNuevo[1];
-            // Medida de seguridad: Si el OCR pegó palabras del sistema en la misma línea, las cortamos
             codigoEncontrado = codigoEncontrado.split('HORARIO')[0].split('ADMIN')[0].split('ESTADO')[0];
             break;
           }
-        } 
-        // 2. Busca patrón de Códigos Antiguos (Alfanumérico largo sin REF-)
-        else if (!codigoEncontrado) {
+        } else if (!codigoEncontrado) {
           const matchAntiguo = lineaLimpia.match(/([A-Z0-9]{12,})/);
-          // Para no confundirlo con textos largos como "TOTALAPAGAR$15000", exigimos que no tenga estas palabras
           if (matchAntiguo && !lineaLimpia.includes('TOTAL') && !lineaLimpia.includes('PAGO')) {
             codigoEncontrado = matchAntiguo[1];
             esAntiguo = true;
@@ -642,30 +647,27 @@
       if (codigoEncontrado) {
         document.getElementById('codigo').value = codigoEncontrado;
         
-        // Feedback Visual de Éxito
         ocrLoading.classList.remove('pulse');
         ocrLoading.textContent = esAntiguo 
           ? '✅ ¡Código antiguo detectado! Buscando información...'
           : '✅ ¡Código detectado! Buscando información...';
         ocrLoading.style.color = 'var(--success)';
         
-        // Esperamos 1 segundo para que el cliente lea el mensaje y consultamos
         setTimeout(() => {
           ocrLoading.style.display = 'none';
           consultar(); 
         }, 1000);
         
       } else {
-        // Si no detecta nada
         ocrLoading.classList.remove('pulse');
         ocrLoading.style.display = 'none';
-        errorMsg.textContent = '❌ No se detectó ningún código en la imagen. Asegúrate de que se vea claro o intenta escribirlo manualmente arriba.';
+        errorMsg.innerHTML = '❌ No se detectó ningún código en la imagen.<br>Asegúrate de que se vea claro o intenta escribirlo manualmente arriba.';
         errorMsg.style.display = 'block';
       }
     } catch (err) {
       ocrLoading.classList.remove('pulse');
       ocrLoading.style.display = 'none';
-      errorMsg.textContent = '❌ Hubo un error al leer la imagen. Intenta escribir el código a mano.';
+      errorMsg.innerHTML = '❌ Hubo un error al leer la imagen. Intenta escribir el código a mano.';
       errorMsg.style.display = 'block';
     }
   }
