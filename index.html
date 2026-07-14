@@ -563,7 +563,7 @@
     }
   }
 
-  /* ================= ESCÁNER DE IMAGEN (OCR) MEJORADO ================= */
+  /* ================= ESCÁNER DE IMAGEN (OCR) CON LÓGICA POR LÍNEAS ================= */
   const dropArea = document.getElementById('ref-drop-area');
   const fileInput = document.getElementById('ref-file-input');
   const ocrLoading = document.getElementById('ocr-loading');
@@ -608,18 +608,45 @@
       const ret = await worker.recognize(file);
       await worker.terminate();
 
-      // LIMPIADOR DE ESPACIOS: Evita que el OCR rompa el código si lee "R E F - 1 2 3"
-      const textoLimpio = ret.data.text.replace(/\s+/g, '');
+      // NUEVA LÓGICA: Separar el texto línea por línea para evitar que "Horario" se pegue al código
+      const lineas = ret.data.text.split('\n');
+      let codigoEncontrado = null;
+      let esAntiguo = false;
+
+      for (let linea of lineas) {
+        // Limpiador: quitamos espacios solo de esta línea y la pasamos a mayúsculas
+        let lineaLimpia = linea.replace(/\s+/g, '').toUpperCase();
+        
+        // 1. Busca patrón de Códigos Nuevos (con REF-)
+        if (lineaLimpia.includes('REF-')) {
+          const matchNuevo = lineaLimpia.match(/REF-([A-Z0-9\-]+)/);
+          if (matchNuevo) {
+            // Extraemos la coincidencia
+            codigoEncontrado = 'REF-' + matchNuevo[1];
+            // Medida de seguridad: Si el OCR pegó palabras del sistema en la misma línea, las cortamos
+            codigoEncontrado = codigoEncontrado.split('HORARIO')[0].split('ADMIN')[0].split('ESTADO')[0];
+            break;
+          }
+        } 
+        // 2. Busca patrón de Códigos Antiguos (Alfanumérico largo sin REF-)
+        else if (!codigoEncontrado) {
+          const matchAntiguo = lineaLimpia.match(/([A-Z0-9]{12,})/);
+          // Para no confundirlo con textos largos como "TOTALAPAGAR$15000", exigimos que no tenga estas palabras
+          if (matchAntiguo && !lineaLimpia.includes('TOTAL') && !lineaLimpia.includes('PAGO')) {
+            codigoEncontrado = matchAntiguo[1];
+            esAntiguo = true;
+          }
+        }
+      }
       
-      // 1. Busca el patrón de códigos nuevos (con la palabra REF-)
-      const mNuevo = textoLimpio.match(/REF-([A-Z0-9\-]+)/i);
-      
-      if (mNuevo) {
-        document.getElementById('codigo').value = 'REF-' + mNuevo[1].toUpperCase();
+      if (codigoEncontrado) {
+        document.getElementById('codigo').value = codigoEncontrado;
         
         // Feedback Visual de Éxito
         ocrLoading.classList.remove('pulse');
-        ocrLoading.textContent = '✅ ¡Código detectado! Buscando información...';
+        ocrLoading.textContent = esAntiguo 
+          ? '✅ ¡Código antiguo detectado! Buscando información...'
+          : '✅ ¡Código detectado! Buscando información...';
         ocrLoading.style.color = 'var(--success)';
         
         // Esperamos 1 segundo para que el cliente lea el mensaje y consultamos
@@ -629,28 +656,11 @@
         }, 1000);
         
       } else {
-        // 2. Fallback: Códigos antiguos largos sin la palabra REF-
-        const mAntiguo = textoLimpio.match(/([A-Z0-9]{12,})/i);
-        
-        if (mAntiguo) {
-          document.getElementById('codigo').value = mAntiguo[1].toUpperCase();
-          
-          ocrLoading.classList.remove('pulse');
-          ocrLoading.textContent = '✅ ¡Código antiguo detectado! Buscando información...';
-          ocrLoading.style.color = 'var(--success)';
-          
-          setTimeout(() => {
-            ocrLoading.style.display = 'none';
-            consultar(); 
-          }, 1000);
-          
-        } else {
-          // Si no detecta nada
-          ocrLoading.classList.remove('pulse');
-          ocrLoading.style.display = 'none';
-          errorMsg.textContent = '❌ No se detectó ningún código en la imagen. Asegúrate de que se vea claro o intenta escribirlo manualmente arriba.';
-          errorMsg.style.display = 'block';
-        }
+        // Si no detecta nada
+        ocrLoading.classList.remove('pulse');
+        ocrLoading.style.display = 'none';
+        errorMsg.textContent = '❌ No se detectó ningún código en la imagen. Asegúrate de que se vea claro o intenta escribirlo manualmente arriba.';
+        errorMsg.style.display = 'block';
       }
     } catch (err) {
       ocrLoading.classList.remove('pulse');
