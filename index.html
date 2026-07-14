@@ -45,7 +45,7 @@
   /* Header */
   .header {
     text-align: center;
-    margin-bottom: 40px;
+    margin-bottom: 30px;
   }
   .brand {
     font-family: 'Space Grotesk', sans-serif;
@@ -67,6 +67,38 @@
     color: var(--text-muted);
     font-size: 0.9rem;
     margin-top: 8px;
+  }
+
+  /* Guía para Clientes */
+  .guide-box {
+    background: rgba(62, 160, 224, 0.05);
+    border: 1px solid rgba(62, 160, 224, 0.2);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 24px;
+  }
+  .guide-title {
+    font-weight: 700;
+    color: var(--primary);
+    font-size: 0.9rem;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .guide-list {
+    font-size: 0.85rem;
+    color: #a8b0bd;
+    padding-left: 20px;
+    line-height: 1.6;
+  }
+  .guide-list li { margin-bottom: 6px; }
+  .guide-list code { 
+    background: rgba(255,255,255,0.1); 
+    padding: 2px 6px; 
+    border-radius: 4px; 
+    color: var(--text-main); 
+    font-family: monospace;
   }
 
   /* Search Box */
@@ -146,8 +178,8 @@
     margin-top: 12px;
     text-align: center;
     font-weight: 600;
-    animation: pulse 1.5s infinite;
   }
+  .ocr-loading.pulse { animation: pulse 1.5s infinite; }
   @keyframes pulse { 0% { opacity: 0.6; } 50% { opacity: 1; } 100% { opacity: 0.6; } }
 
   /* Error Message */
@@ -283,6 +315,15 @@
     <div class="subtitle">Portal de clientes · Consulta tu servicio</div>
   </div>
 
+  <!-- GUÍA DE USUARIO -->
+  <div class="guide-box">
+    <div class="guide-title">💡 ¿Cómo consultar tu servicio?</div>
+    <ol class="guide-list">
+      <li><strong>Opción 1:</strong> Escribe el código <code>REF-XXXX</code> que aparece en tu recibo en la casilla de abajo.</li>
+      <li><strong>Opción 2:</strong> Toca el recuadro punteado para <strong>subir una foto</strong> de tu recibo (o pégala desde tu portapapeles). El sistema la leerá automáticamente.</li>
+    </ol>
+  </div>
+
   <div class="search-box">
     <label for="codigo">Ingresa tu código de referencia</label>
     <div class="input-wrapper">
@@ -295,8 +336,8 @@
       📷 Sube una foto de tu recibo <br><span style="font-size: 0.75rem;">(Toca aquí, arrastra o pega la imagen)</span>
       <input type="file" id="ref-file-input" accept="image/*" style="display:none;">
     </div>
-    <div class="ocr-loading" id="ocr-loading">⏳ Escaneando recibo, por favor espera...</div>
     
+    <div class="ocr-loading" id="ocr-loading">⏳ Escaneando recibo, por favor espera...</div>
     <div class="error-msg" id="error-msg">❌ Código no válido o no encontrado. Revisa tu recibo e intenta de nuevo.</div>
   </div>
 
@@ -522,7 +563,7 @@
     }
   }
 
-  /* ================= ESCÁNER DE IMAGEN (OCR) ================= */
+  /* ================= ESCÁNER DE IMAGEN (OCR) MEJORADO ================= */
   const dropArea = document.getElementById('ref-drop-area');
   const fileInput = document.getElementById('ref-file-input');
   const ocrLoading = document.getElementById('ocr-loading');
@@ -554,9 +595,12 @@
   async function procesarImagen(file) {
     if(!file) return;
     
-    // Ocultar resultados y mostrar carga
+    // UI Feedback: Ocultar resultados y mostrar carga interactiva
     document.getElementById('result-card').style.display = 'none';
     errorMsg.style.display = 'none';
+    ocrLoading.textContent = '⏳ Escaneando recibo, por favor espera...';
+    ocrLoading.style.color = 'var(--warning)';
+    ocrLoading.classList.add('pulse');
     ocrLoading.style.display = 'block';
 
     try {
@@ -564,21 +608,54 @@
       const ret = await worker.recognize(file);
       await worker.terminate();
 
-      // Busca la palabra REF- seguida de letras, números o guiones
-      const match = ret.data.text.match(/REF-([A-Z0-9\-]+)/i);
+      // LIMPIADOR DE ESPACIOS: Evita que el OCR rompa el código si lee "R E F - 1 2 3"
+      const textoLimpio = ret.data.text.replace(/\s+/g, '');
       
-      if (match) {
-        document.getElementById('codigo').value = 'REF-' + match[1].toUpperCase();
-        ocrLoading.style.display = 'none';
-        consultar(); // Autoejecutar búsqueda
+      // 1. Busca el patrón de códigos nuevos (con la palabra REF-)
+      const mNuevo = textoLimpio.match(/REF-([A-Z0-9\-]+)/i);
+      
+      if (mNuevo) {
+        document.getElementById('codigo').value = 'REF-' + mNuevo[1].toUpperCase();
+        
+        // Feedback Visual de Éxito
+        ocrLoading.classList.remove('pulse');
+        ocrLoading.textContent = '✅ ¡Código detectado! Buscando información...';
+        ocrLoading.style.color = 'var(--success)';
+        
+        // Esperamos 1 segundo para que el cliente lea el mensaje y consultamos
+        setTimeout(() => {
+          ocrLoading.style.display = 'none';
+          consultar(); 
+        }, 1000);
+        
       } else {
-        ocrLoading.style.display = 'none';
-        errorMsg.textContent = '❌ No se detectó ningún código en la imagen. Intenta escribirlo manualmente.';
-        errorMsg.style.display = 'block';
+        // 2. Fallback: Códigos antiguos largos sin la palabra REF-
+        const mAntiguo = textoLimpio.match(/([A-Z0-9]{12,})/i);
+        
+        if (mAntiguo) {
+          document.getElementById('codigo').value = mAntiguo[1].toUpperCase();
+          
+          ocrLoading.classList.remove('pulse');
+          ocrLoading.textContent = '✅ ¡Código antiguo detectado! Buscando información...';
+          ocrLoading.style.color = 'var(--success)';
+          
+          setTimeout(() => {
+            ocrLoading.style.display = 'none';
+            consultar(); 
+          }, 1000);
+          
+        } else {
+          // Si no detecta nada
+          ocrLoading.classList.remove('pulse');
+          ocrLoading.style.display = 'none';
+          errorMsg.textContent = '❌ No se detectó ningún código en la imagen. Asegúrate de que se vea claro o intenta escribirlo manualmente arriba.';
+          errorMsg.style.display = 'block';
+        }
       }
     } catch (err) {
+      ocrLoading.classList.remove('pulse');
       ocrLoading.style.display = 'none';
-      errorMsg.textContent = '❌ Hubo un error al leer la imagen. Intenta escribir el código.';
+      errorMsg.textContent = '❌ Hubo un error al leer la imagen. Intenta escribir el código a mano.';
       errorMsg.style.display = 'block';
     }
   }
